@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SPeakUp | SPJIMR</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Nunito', sans-serif;
+        background-color: #E6DDD0; /* Sand */
+        color: #708090; /* Soft Slate */
+      }
+      /* Neumorphic Utilities */
+      .neu-flat {
+        background: #E6DDD0;
+        box-shadow: 8px 8px 16px #c4bcb1, -8px -8px 16px #ffffff;
+      }
+      .neu-pressed {
+        background: #E6DDD0;
+        box-shadow: inset 6px 6px 12px #c4bcb1, inset -6px -6px 12px #ffffff;
+      }
+      .neu-icon-btn {
+        background: #E6DDD0;
+        box-shadow: 5px 5px 10px #c4bcb1, -5px -5px 10px #ffffff;
+        transition: all 0.2s ease;
+      }
+      .neu-icon-btn:active {
+        box-shadow: inset 5px 5px 10px #c4bcb1, inset -5px -5px 10px #ffffff;
+      }
+      
+      /* Base Animation for SParsh Avatar (Calm/Default) */
+      @keyframes breathe {
+        0% { transform: scale(1); border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
+        50% { transform: scale(1.05); border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%; }
+        100% { transform: scale(1); border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
+      }
+      
+      /* Mood: Anxious - Jittery, Spiky, Orange */
+      @keyframes anxious-pulse {
+        0% { transform: scale(1) rotate(0deg); border-radius: 40% 60% 40% 60% / 40% 50% 60% 50%; }
+        25% { transform: scale(1.1) rotate(5deg); border-radius: 20% 80% 30% 70% / 60% 30% 70% 40%; }
+        50% { transform: scale(0.95) rotate(-5deg); border-radius: 70% 30% 80% 20% / 30% 60% 40% 70%; }
+        75% { transform: scale(1.05) rotate(3deg); border-radius: 30% 70% 20% 80% / 70% 40% 30% 60%; }
+        100% { transform: scale(1) rotate(0deg); border-radius: 40% 60% 40% 60% / 40% 50% 60% 50%; }
+      }
+
+      /* Mood: Focus - Stable, Geometric, Slate */
+      @keyframes focus-pulse {
+        0% { transform: scale(1); border-radius: 45%; }
+        50% { transform: scale(1.02); border-radius: 50%; }
+        100% { transform: scale(1); border-radius: 45%; }
+      }
+
+      /* Mood: Tired - Heavy, Drooping, Grey */
+      @keyframes tired-pulse {
+        0% { transform: scale(1, 0.9) translateY(0); border-radius: 60% 40% 70% 30% / 70% 80% 30% 40%; }
+        50% { transform: scale(1.05, 0.85) translateY(5px); border-radius: 70% 30% 60% 40% / 80% 70% 40% 30%; }
+        100% { transform: scale(1, 0.9) translateY(0); border-radius: 60% 40% 70% 30% / 70% 80% 30% 40%; }
+      }
+
+      /* Mood: Energetic - Bouncy, Expanding, Gold */
+      @keyframes energetic-pulse {
+        0% { transform: scale(1); border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
+        25% { transform: scale(1.2); border-radius: 50%; }
+        50% { transform: scale(0.9); border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%; }
+        75% { transform: scale(1.1); border-radius: 50%; }
+        100% { transform: scale(1); border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
+      }
+
+      .sparsh-blob {
+        animation: breathe 6s ease-in-out infinite;
+        background: linear-gradient(135deg, #8A9A5B 0%, #A4B475 100%);
+        box-shadow: 0 10px 30px rgba(138, 154, 91, 0.3);
+        transition: background 1s ease, box-shadow 1s ease;
+      }
+      
+      .sparsh-blob.speaking {
+        animation-duration: 1s;
+      }
+      .sparsh-blob.listening {
+        background: linear-gradient(135deg, #CC5500 0%, #E67E22 100%);
+        box-shadow: 0 0 20px rgba(204, 85, 0, 0.4);
+        animation-duration: 2s;
+      }
+
+      /* Mood Modifier Classes */
+      .sparsh-blob.mood-anxious {
+        animation: anxious-pulse 0.5s infinite linear;
+        background: linear-gradient(135deg, #CC5500 0%, #FF4500 100%);
+        box-shadow: 0 0 40px rgba(204, 85, 0, 0.6);
+      }
+      
+      .sparsh-blob.mood-focus {
+        animation: focus-pulse 4s infinite ease-in-out;
+        background: linear-gradient(135deg, #708090 0%, #5DADE2 100%);
+        box-shadow: 0 10px 30px rgba(93, 173, 226, 0.4);
+      }
+
+      .sparsh-blob.mood-tired {
+        animation: tired-pulse 6s infinite ease-in-out;
+        background: linear-gradient(135deg, #A0A0A0 0%, #808080 100%);
+        box-shadow: 0 5px 15px rgba(128, 128, 128, 0.3);
+      }
+
+      .sparsh-blob.mood-energetic {
+        animation: energetic-pulse 2s infinite cubic-bezier(0.68, -0.55, 0.27, 1.55);
+        background: linear-gradient(135deg, #E6C685 0%, #F1C40F 100%);
+        box-shadow: 0 10px 50px rgba(241, 196, 15, 0.5);
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.40.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
+    "recharts": "https://esm.sh/recharts@^3.7.0",
+    "@testing-library/react": "https://esm.sh/@testing-library/react@^16.3.2",
+    "@testing-library/jest-dom": "https://esm.sh/@testing-library/jest-dom@^6.9.1"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
