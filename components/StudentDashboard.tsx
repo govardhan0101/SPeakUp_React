@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Send, Calendar, BookOpen, Activity, Home, CheckSquare, Heart, Lock, User as UserIcon, LogOut, MessageSquare, XCircle, AlertCircle, Cloud, Sparkles, Key } from 'lucide-react';
+import { Mic, Send, Calendar, BookOpen, Activity, Home, CheckSquare, Heart, Lock, User as UserIcon, LogOut, MessageSquare, XCircle, AlertCircle, Cloud, Sparkles, Key, CheckCircle } from 'lucide-react';
 import { AreaChart, Area, Tooltip, ResponsiveContainer } from 'recharts';
 import SParshAvatar from './SParshAvatar';
 import EnvironmentWidget from './EnvironmentWidget';
 import { sendMessageToSParsh } from '../services/geminiService';
 import { analyzeSentimentAndSchedule } from '../services/sentimentAgent';
-import { VIBES } from '../constants';
 import { Message, WellnessTask, WellnessLeave, AppointmentSlot, JournalEntry, P2PMessage } from '../types';
 import * as db from '../services/storage';
 import { useSParsh } from '../contexts/SParshContext';
@@ -17,7 +16,7 @@ interface Props {
 }
 
 const StudentDashboard: React.FC<Props> = ({ triggerCrisis, userEmail, userId }) => {
-  const { vibe, setVibe, setAvatarState } = useSParsh();
+  const { setVibe, setAvatarState } = useSParsh();
   
   const [activeTab, setActiveTab] = useState<'home' | 'journal' | 'tasks' | 'booking'>('home');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -28,8 +27,6 @@ const StudentDashboard: React.FC<Props> = ({ triggerCrisis, userEmail, userId })
 
   // Error States
   const [apiError, setApiError] = useState(false);
-  const [fallbackConsentNeeded, setFallbackConsentNeeded] = useState(false);
-  const [lastUserMessageText, setLastUserMessageText] = useState<string>('');
   const [isFallbackMode, setIsFallbackMode] = useState(false);
 
   // Profile State
@@ -39,7 +36,10 @@ const StudentDashboard: React.FC<Props> = ({ triggerCrisis, userEmail, userId })
   const [tasks, setTasks] = useState<WellnessTask[]>([]);
   const [activeLeave, setActiveLeave] = useState<WellnessLeave | null>(null);
   const [slots, setSlots] = useState<AppointmentSlot[]>([]);
+  const [journals, setJournals] = useState<JournalEntry[]>([]);
   const [journalText, setJournalText] = useState('');
+  const [isSaved, setIsSaved] = useState(false);
+
 
   // P2P Chat States
   const [showP2P, setShowP2P] = useState(false);
@@ -55,6 +55,7 @@ const StudentDashboard: React.FC<Props> = ({ triggerCrisis, userEmail, userId })
         setTasks(await db.getTasks(userEmail));
         setActiveLeave(await db.getActiveLeave(userEmail));
         setSlots(await db.getSlots());
+        setJournals(await db.getJournals(userId));
         setIsCloudSyncing(false);
     };
     loadData();
@@ -71,66 +72,62 @@ const StudentDashboard: React.FC<Props> = ({ triggerCrisis, userEmail, userId })
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   useEffect(() => scrollToBottom(), [messages]);
 
-  const processMessageSend = async (textToSend: string, forceFallback = false) => {
+  // Effect to load today's journal entry when component mounts or journals are updated
+  useEffect(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayEntry = journals.find(j => j.date.startsWith(todayStr));
+    if (todayEntry) {
+      setJournalText(todayEntry.encryptedText);
+    } else {
+      setJournalText(''); // Clear for a new day if no entry found
+    }
+  }, [journals]);
+
+  const processMessageSend = async (textToSend: string) => {
       setAvatarState('listening');
       setIsLoading(true);
       setApiError(false);
-      setFallbackConsentNeeded(false);
-
-      const validHistory = messages.filter(m => !m.text.includes("Token Limit Reached"));
       
+      const validHistory = messages.filter(m => !m.text.includes("Token Limit Reached"));
       const history = validHistory.map(m => ({ role: m.role === 'agent' ? 'model' : m.role, parts: [{ text: m.text }] }));
-      const response = await sendMessageToSParsh(history, textToSend, true, forceFallback || isFallbackMode);
+      
+      const response = await sendMessageToSParsh(history, textToSend, true);
       
       setIsLoading(false);
       setAvatarState('speaking');
 
+      // Update UI based on which model was used
+      setIsFallbackMode(response.modelUsed === 'fallback');
+      
       // Check for API Configuration Error (400/403/Invalid Key)
       if (response.text.includes("API key not valid") || response.text.includes("System Error")) {
           setApiError(true);
       }
 
-      if (response.needsFallbackConsent) {
-          setFallbackConsentNeeded(true);
-          const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'model', text: response.text, timestamp: new Date() };
-          setMessages(prev => [...prev, modelMsg]);
-      } else {
-          // Success
-          if (response.detectedMood) setVibe(response.detectedMood);
-          if (response.isCrisis) triggerCrisis();
+      // Success
+      if (response.detectedMood) setVibe(response.detectedMood);
+      if (response.isCrisis) triggerCrisis();
 
-          const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'model', text: response.text, timestamp: new Date() };
-          const updatedMessages = [...validHistory, 
-                { id: Date.now().toString(), role: 'user', text: textToSend, timestamp: new Date() } as Message, 
-                modelMsg
-          ];
-          setMessages(updatedMessages);
-          
-          setIsCloudSyncing(true);
-          await db.saveChatMessage(userId, modelMsg);
-          setIsCloudSyncing(false);
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'model', text: response.text, timestamp: new Date() };
+      const updatedMessages = [...validHistory, 
+            { id: Date.now().toString(), role: 'user', text: textToSend, timestamp: new Date() } as Message, 
+            modelMsg
+      ];
+      setMessages(updatedMessages);
+      
+      setIsCloudSyncing(true);
+      await db.saveChatMessage(userId, modelMsg);
+      setIsCloudSyncing(false);
 
-          // --- TRIGGER AUTONOMOUS AGENT (SLM) ---
-          analyzeSentimentAndSchedule(userId, userEmail, updatedMessages).then(async (agentMsg) => {
-             if (agentMsg) {
-                 // Handle Agent Interventions
-                 
-                 // 1. Critical SOS Trigger
-                 if (agentMsg.metadata?.type === 'crisis_trigger') {
-                     triggerCrisis();
-                 }
-
-                 // 2. Task Assignment (Refresh UI)
-                 if (agentMsg.metadata?.type === 'task_assignment') {
-                     setTasks(await db.getTasks(userEmail)); // Refresh tasks instantly
-                     // We can optionally switch tabs, but a notification bubble is less intrusive
-                 }
-
-                 setMessages(prev => [...prev, agentMsg]);
-                 await db.saveChatMessage(userId, agentMsg);
-             }
-          });
-      }
+      // --- TRIGGER AUTONOMOUS AGENT (SLM) ---
+      analyzeSentimentAndSchedule(userId, userEmail, updatedMessages).then(async (agentMsg) => {
+         if (agentMsg) {
+             if (agentMsg.metadata?.type === 'crisis_trigger') triggerCrisis();
+             if (agentMsg.metadata?.type === 'task_assignment') setTasks(await db.getTasks(userEmail));
+             setMessages(prev => [...prev, agentMsg]);
+             await db.saveChatMessage(userId, agentMsg);
+         }
+      });
       
       setTimeout(() => setAvatarState('idle'), 3000);
   };
@@ -139,12 +136,10 @@ const StudentDashboard: React.FC<Props> = ({ triggerCrisis, userEmail, userId })
     if (!inputText.trim()) return;
     const textToSend = inputText;
     
-    // Add user message to UI
     const userMsg: Message = { id: Date.now().toString(), role: 'user', text: textToSend, timestamp: new Date() };
     setMessages(prev => [...prev, userMsg]);
     setInputText('');
-    setLastUserMessageText(textToSend); // Save for retry
-
+    
     setIsCloudSyncing(true);
     await db.saveChatMessage(userId, userMsg);
     setIsCloudSyncing(false);
@@ -152,28 +147,26 @@ const StudentDashboard: React.FC<Props> = ({ triggerCrisis, userEmail, userId })
     await processMessageSend(textToSend);
   };
 
-  const handleFallbackConfirm = async () => {
-      setIsFallbackMode(true);
-      setMessages(prev => prev.slice(0, -1)); 
-      await processMessageSend(lastUserMessageText, true);
-  };
-
   const toggleTask = async (id: string) => {
     setTasks(tasks.map(t => t.id === id ? { ...t, isCompleted: !t.isCompleted } : t));
     await db.toggleTaskCompletion(userEmail, id);
   };
 
-  const handleBookSlot = async (slotId: string) => {
+  const handleBookSlot = async (slotId: string, messageId?: string) => {
     setIsCloudSyncing(true);
     const userName = userEmail.split('@')[0].replace('.', ' ');
     const success = await db.requestSlot(slotId, userId, userName);
     setIsCloudSyncing(false);
-    if (success) {
-        setSlots(await db.getSlots());
-        alert("Session Requested. Waiting for Counselor Confirmation.");
-    } else {
-        alert("This slot is no longer available.");
+
+    if (messageId) {
+        const newType = success ? 'booking_request_sent' : 'booking_slot_taken';
+        setMessages(prevMessages => 
+            prevMessages.map(msg => 
+                msg.id === messageId ? { ...msg, metadata: { ...msg.metadata, type: newType } } : msg
+            )
+        );
     }
+    if (success) setSlots(await db.getSlots());
   };
 
   const handleCancelSlot = async (slotId: string) => {
@@ -184,18 +177,24 @@ const StudentDashboard: React.FC<Props> = ({ triggerCrisis, userEmail, userId })
   };
 
   const handleSaveJournal = async () => {
-      if(!journalText.trim() || !vibe) return;
-      setIsCloudSyncing(true);
-      const entry: JournalEntry = {
-          id: Date.now().toString(),
-          date: new Date().toISOString(),
-          vibe: vibe,
-          encryptedText: journalText
-      };
-      await db.saveJournal(userId, entry);
-      setJournalText('');
-      setIsCloudSyncing(false);
-      alert("Journal Entry Encrypted & Saved Successfully.");
+    if (!journalText.trim() || isSaved) return;
+    setIsCloudSyncing(true);
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const existingEntry = journals.find(j => j.date.startsWith(todayStr));
+
+    const entryToSave: JournalEntry = {
+      id: existingEntry ? existingEntry.id : crypto.randomUUID(),
+      date: new Date().toISOString(),
+      encryptedText: journalText,
+    };
+
+    await db.saveJournal(userId, entryToSave);
+    setJournals(await db.getJournals(userId)); // Refresh journal list
+    setIsCloudSyncing(false);
+
+    setIsSaved(true);
+    setTimeout(() => setIsSaved(false), 2000);
   };
 
   const handleP2PSend = async () => {
@@ -203,7 +202,7 @@ const StudentDashboard: React.FC<Props> = ({ triggerCrisis, userEmail, userId })
       await db.sendP2PMessage({
           id: Date.now().toString(),
           senderId: userId,
-          receiverId: 'counselor_dimple', // Demo ID
+          receiverId: 'counselor_dimple',
           text: p2pInput,
           timestamp: new Date().toISOString(),
           isRead: false
@@ -312,7 +311,6 @@ const StudentDashboard: React.FC<Props> = ({ triggerCrisis, userEmail, userId })
                {messages.map(msg => (
                  <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                    
-                   {/* AGENTIC MESSAGE (SLM INTERVENTION) */}
                    {msg.role === 'agent' ? (
                        <div className="w-[85%] bg-white border border-[#8A9A5B] p-4 rounded-xl shadow-lg animate-in slide-in-from-left duration-500 mb-2">
                            <div className="flex items-center gap-2 mb-2 text-[#8A9A5B] font-bold text-xs">
@@ -320,38 +318,21 @@ const StudentDashboard: React.FC<Props> = ({ triggerCrisis, userEmail, userId })
                            </div>
                            <p className="text-sm text-slate-600 mb-3">{msg.text}</p>
                            
-                           {/* Slot Booking Widget */}
                            {msg.metadata?.type === 'booking_suggestion' && msg.metadata.slotId && (
                                <button 
-                                 onClick={() => handleBookSlot(msg.metadata!.slotId!)}
-                                 className="w-full bg-[#8A9A5B] text-white py-2 rounded-lg text-xs font-bold hover:bg-[#728248] transition-colors flex items-center justify-center gap-2">
+                                 onClick={() => handleBookSlot(msg.metadata!.slotId!, msg.id)}
+                                 className="w-full bg-[#8A9A5B] text-white py-2 rounded-lg text-xs font-bold hover:bg-[#728248] transition-colors flex items-center justify-center gap-2 active:scale-95">
                                  <Calendar size={12}/> Book: {msg.metadata.slotTime}
                                </button>
                            )}
-
-                           {/* Task Assigned Widget */}
-                           {msg.metadata?.type === 'task_assignment' && (
-                               <div className="w-full bg-blue-50 text-blue-700 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 border border-blue-100">
-                                   <CheckSquare size={12}/> Task Added: {msg.metadata.taskName}
-                               </div>
-                           )}
+                            {msg.metadata?.type === 'booking_request_sent' && (<div className="w-full bg-yellow-50 text-yellow-700 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 border border-yellow-200"><CheckCircle size={14} /> Request Sent! View in Booking tab.</div>)}
+                            {msg.metadata?.type === 'booking_slot_taken' && (<div className="w-full bg-red-100 text-red-700 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 border border-red-200"><XCircle size={14} /> This slot was already taken.</div>)}
+                           {msg.metadata?.type === 'task_assignment' && (<div className="w-full bg-blue-50 text-blue-700 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 border border-blue-100"><CheckSquare size={12}/> Task Added: {msg.metadata.taskName}</div>)}
                        </div>
                    ) : (
-                       // STANDARD CHAT MESSAGE
                        <div className={`max-w-[85%] p-4 rounded-2xl text-sm leading-relaxed
                          ${msg.role === 'user' ? 'bg-[#8A9A5B] text-white rounded-br-none shadow-md' : 'neu-flat text-[#708090] rounded-bl-none'}`}>
                          {msg.text}
-                       </div>
-                   )}
-                   
-                   {msg.text.includes("Token Limit Reached") && fallbackConsentNeeded && msg.role === 'model' && (
-                       <div className="mt-2 flex gap-2 animate-in fade-in duration-300">
-                           <button onClick={handleFallbackConfirm} className="bg-[#CC5500] text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md hover:scale-105 transition-transform">
-                               Yes, Switch Model
-                           </button>
-                           <button onClick={() => setFallbackConsentNeeded(false)} className="bg-gray-300 text-slate-600 px-4 py-2 rounded-xl text-xs font-bold hover:bg-gray-400 transition-colors">
-                               Wait for Reset
-                           </button>
                        </div>
                    )}
                  </div>
@@ -419,26 +400,23 @@ const StudentDashboard: React.FC<Props> = ({ triggerCrisis, userEmail, userId })
 
         {activeTab === 'journal' && (
           <div className="animate-in slide-in-from-bottom-10 duration-500">
-             <h3 className="text-xl font-bold text-[#708090] mb-6">Vibe Check</h3>
-             <div className="grid grid-cols-2 gap-4 mb-8">
-               {VIBES.map(v => (
-                 <button key={v.type} onClick={() => setVibe(v.type)}
-                   className={`p-6 rounded-2xl transition-all duration-300 flex flex-col items-center gap-2 ${vibe === v.type ? 'neu-pressed ring-2 ring-[#8A9A5B]' : 'neu-flat hover:-translate-y-1'}`}>
-                   <div className="w-8 h-8 rounded-full" style={{ backgroundColor: v.color }}></div>
-                   <span className="text-sm font-medium text-[#708090]">{v.label}</span>
-                 </button>
-               ))}
-             </div>
-             <div className="neu-pressed rounded-2xl p-4">
+             <h3 className="text-xl font-bold text-[#708090] mb-6">Daily Reflections</h3>
+             <div className="neu-pressed rounded-2xl p-4 h-80 flex flex-col">
                <textarea 
                 value={journalText}
                 onChange={(e) => setJournalText(e.target.value)}
                 placeholder="Pour it out here. It's encrypted..." 
-                className="w-full bg-transparent border-none outline-none h-40 text-[#708090] placeholder-slate-400 resize-none"
+                className="w-full h-full bg-transparent border-none outline-none text-[#708090] placeholder-slate-400 resize-none flex-1"
                />
-               <div className="flex justify-end mt-2">
-                 <button onClick={handleSaveJournal} className="bg-[#8A9A5B] text-white px-6 py-2 rounded-full shadow-lg text-sm active:scale-95 transition-transform">Encrypt & Save</button>
-               </div>
+             </div>
+             <div className="flex justify-end mt-4">
+                <button 
+                    onClick={handleSaveJournal} 
+                    disabled={!journalText.trim() || isSaved}
+                    className={`w-full bg-[#8A9A5B] text-white px-6 py-3 rounded-full shadow-lg text-sm active:scale-95 transition-all flex items-center justify-center gap-2 font-bold ${isSaved ? 'bg-green-500' : 'bg-[#8A9A5B]'}`}
+                >
+                    {isSaved ? <><CheckCircle size={16}/> Saved!</> : "Encrypt & Save"}
+                </button>
              </div>
           </div>
         )}

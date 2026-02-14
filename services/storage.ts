@@ -236,8 +236,21 @@ export const saveJournal = async (userId: string, entry: JournalEntry) => {
     await networkDelay();
     const allJournals = cloudGet<Record<string, JournalEntry[]>>(CLOUD_KEYS.JOURNALS, {});
     const userJournals = allJournals[userId] || [];
-    const encryptedEntry = { ...entry, encryptedText: encryptData(entry.encryptedText) };
-    userJournals.push(encryptedEntry);
+    
+    const entryDate = entry.date.split('T')[0]; // Normalize to YYYY-MM-DD
+    const entryIndex = userJournals.findIndex(j => j.date.startsWith(entryDate));
+
+    const encryptedText = encryptData(entry.encryptedText);
+
+    if (entryIndex > -1) {
+        // Update existing entry's text
+        userJournals[entryIndex].encryptedText = encryptedText;
+    } else {
+        // Add new entry, ensuring text is encrypted
+        const encryptedEntry = { ...entry, encryptedText };
+        userJournals.push(encryptedEntry);
+    }
+    
     allJournals[userId] = userJournals;
     cloudSet(CLOUD_KEYS.JOURNALS, allJournals);
 };

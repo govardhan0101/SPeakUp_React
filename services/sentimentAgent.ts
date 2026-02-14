@@ -12,7 +12,7 @@ const ai = new GoogleGenAI({ apiKey });
 
 /**
  * THE AUTONOMOUS GUARDIAN (SLM)
- * Model: Gemini 2.5 Flash Lite (Low Latency, Low Cost)
+ * Model: Gemini Flash Lite (Low Latency, Low Cost)
  * Role: Background Clinical Triage & Autonomous Intervention
  */
 export const analyzeSentimentAndSchedule = async (
@@ -32,7 +32,7 @@ export const analyzeSentimentAndSchedule = async (
   try {
     // 2. The Clinical Reasoning Prompt
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-lite-latest",
+      model: "gemini-flash-lite-latest",
       contents: `
         Act as an Autonomous Clinical Triage System called "SParsh Guardian".
         Analyze the conversation below. Your job is to act SILENTLY but DECISIVELY.

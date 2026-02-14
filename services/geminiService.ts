@@ -10,21 +10,23 @@ export const sendMessageToSParsh = async (
   newMessage: string,
   useThinking: boolean = true,
   useFallback: boolean = false
-): Promise<{ text: string; isCrisis: boolean; detectedMood?: VibeType; needsFallbackConsent?: boolean }> => {
+): Promise<{ text: string; isCrisis: boolean; detectedMood?: VibeType; modelUsed: 'primary' | 'fallback' }> => {
   
   // 1. Client-side "Kill Switch" pre-check for zero latency safety
   const crisisKeywords = [/suicide/i, /kill myself/i, /end it all/i, /want to die/i, /self-harm/i];
   if (crisisKeywords.some(rx => rx.test(newMessage))) {
     return {
       text: "I am activating the safety protocol. Please hold on.",
-      isCrisis: true
+      isCrisis: true,
+      modelUsed: 'primary'
     };
   }
 
   // Model Selection Logic
   // Primary: gemini-3-pro-preview (Thinking) or gemini-3-flash-preview (Fast)
-  // Fallback: gemini-2.0-flash-exp (Stable/Available)
-  const modelId = useFallback ? 'gemini-2.0-flash-exp' : (useThinking ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview');
+  // Fallback: gemini-3-flash-preview (Stable/Available)
+  const modelId = useFallback ? 'gemini-3-flash-preview' : (useThinking ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview');
+  const modelUsed = useFallback ? 'fallback' : 'primary';
   
   // Configure thinking budget if using Pro model and NOT in fallback
   const thinkingConfig = (useThinking && !useFallback) ? { thinkingBudget: 32768 } : undefined;
@@ -68,7 +70,7 @@ export const sendMessageToSParsh = async (
       text = "I hear you, and I am concerned. Please hold on while I connect you to support.";
     }
 
-    return { text, isCrisis, detectedMood };
+    return { text, isCrisis, detectedMood, modelUsed };
 
   } catch (error: any) {
     console.error(`SParsh Error (${modelId}):`, error);
@@ -79,35 +81,37 @@ export const sendMessageToSParsh = async (
     const msg = error?.message || JSON.stringify(error);
 
     // HANDLER: 404 NOT FOUND (Model doesn't exist/unavailable)
-    // If the primary model fails (e.g., gemini-3-pro-preview not found), automatically try the fallback.
+    // If the primary model fails, automatically try the fallback.
     if (status === 404 || code === 404 || msg.includes("404") || msg.includes("NOT_FOUND")) {
         if (!useFallback) {
             console.log("Primary model not found (404). Auto-switching to fallback model...");
             return sendMessageToSParsh(history, newMessage, false, true);
         } else {
-             return { text: "System Error: Unable to access AI models. Please contact support.", isCrisis: false };
+             return { text: "System Error: Unable to access AI models. Please contact support.", isCrisis: false, modelUsed: 'fallback' };
         }
     }
 
     // HANDLER: 429 RESOURCE EXHAUSTED (Quota)
     if (status === 429 || code === 429 || msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
       if (!useFallback) {
-          // If we haven't tried fallback yet, ask for consent
-          return {
-              text: "I'm currently overwhelmed (Token Limit Reached). May I switch to a different model to continue our conversation?",
-              isCrisis: false,
-              needsFallbackConsent: true
-          };
+          console.log("Quota limit reached on primary model. Auto-switching to fallback...");
+          return sendMessageToSParsh(history, newMessage, false, true);
       } else {
           // Even fallback failed
           return { 
             text: "I'm currently overwhelmed with conversations (Quota Exceeded). Please give me a moment to recharge and try again later.", 
-            isCrisis: false 
+            isCrisis: false,
+            modelUsed: 'fallback'
           };
       }
     }
 
-    return { text: "I'm feeling a bit disconnected. Can we try again in a moment?", isCrisis: false };
+    // Handle API Key error gracefully
+    if (msg.includes("API key not valid")) {
+        return { text: "System Error: API key not valid. Please check configuration.", isCrisis: false, modelUsed: modelUsed };
+    }
+
+    return { text: "I'm feeling a bit disconnected. Can we try again in a moment?", isCrisis: false, modelUsed: modelUsed };
   }
 };
 

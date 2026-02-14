@@ -14,7 +14,7 @@ export interface Message {
   text: string;
   timestamp: Date;
   metadata?: {
-    type: 'booking_suggestion' | 'task_assignment' | 'crisis_trigger';
+    type: 'booking_suggestion' | 'task_assignment' | 'crisis_trigger' | 'booking_request_sent' | 'booking_slot_taken';
     slotId?: string;
     slotTime?: string;
     taskName?: string;
@@ -73,7 +73,6 @@ export interface WellnessLeave {
 export interface JournalEntry {
   id: string;
   date: string;
-  vibe: VibeType;
   encryptedText: string;
 }
 
@@ -85,4 +84,12 @@ export interface AgentAnalysis {
   recommendedAction: 'NONE' | 'SUGGEST_BOOKING' | 'ASSIGN_EXERCISE' | 'TRIGGER_SOS';
   reasoning: string;
   specificExercise?: string; // e.g., "Box Breathing"
+}
+
+// FIX: Added missing WeatherData interface used by EnvironmentWidget.tsx
+export interface WeatherData {
+  location: string;
+  temp: number;
+  condition: string;
+  aqi: number;
 }
